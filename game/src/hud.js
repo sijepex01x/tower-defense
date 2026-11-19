@@ -36,7 +36,7 @@ const DECREE_INFO = {
   build20:  {name: 'Master Builders', short: 'BUILD -20%', desc: 'All build costs -20% for the rest of the run.'},
   heroCd20: {name: 'Heroic Focus',   short: 'HERO CD -20%', desc: 'Hero skill cooldown -20%.'},
   range10:  {name: 'Eagle Eyes',     short: 'RANGE +10%', desc: '+10% tower range for the rest of the run.'},
-  slow10:   {name: 'Deep Winter',    short: 'SLOW +10%',  desc: 'Frost towers slow enemies +10% harder.'},
+  slow10:   {name: 'Deep Freeze',   short: 'SLOW +10%',  desc: 'Frost towers slow enemies +10% harder.'},
 };
 
 let lastBuiltType = 'archer';
