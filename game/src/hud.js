@@ -123,6 +123,9 @@ function selectedPlot(state) {
 }
 
 // Next-wave preview text, derived from the contract's wave rules.
+// Short form: the top bar only has ~200px between the SCORE cluster and
+// the START WAVE button, so list the first kind and count the rest —
+// the full kind list used to run underneath the button and get clipped.
 function wavePreview(wave) {
   if (wave >= 21) return 'Endless — it only gets worse';
   if (wave === 10) return 'Wave 10: THE OGRE + escorts';
@@ -133,7 +136,18 @@ function wavePreview(wave) {
   if (wave >= 5) kinds.push('Armored');
   if (wave >= 7) kinds.push('Healers');
   if (wave >= 8) kinds.push('Splitters');
-  return 'Wave ' + wave + ': ' + count + ' foes — ' + kinds.join(', ');
+  const extra = kinds.length > 1 ? ' +' + (kinds.length - 1) : '';
+  return 'Wave ' + wave + ': ' + count + ' foes — ' + kinds[0] + extra;
+}
+
+// Ultra-short fallback for the top-bar preview when even the short form
+// will not fit the gap (e.g. a huge score shrinks it). Always fits:
+// at most ~20 chars, ~125px at 12px.
+function wavePreviewShort(wave) {
+  if (wave >= 21) return 'Endless mode';
+  if (wave === 10) return 'Wave 10: THE OGRE';
+  if (wave === 20) return 'Wave 20: THE WARLORD';
+  return 'Wave ' + wave + ': ' + (6 + wave * 2) + ' foes';
 }
 
 function enemiesLeft(state) {
@@ -185,13 +199,18 @@ export function computeLayout(state) {
       });
       L.buildMenu = {rect: {x: 8, y: py, w: LOGICAL_W - 16, h: ph}, cards, close};
     } else {
-      const pw = 560, ph = 84;
+      // Panel is 108 tall: a 28px header row on top (the "BUILD — tap a
+      // tower" line lives there on the near-opaque panel base), then the
+      // cards below it. The header used to sit at y+16 with the cards
+      // starting at y+8, so the semi-transparent cards painted over it
+      // and it read muddled.
+      const pw = 560, ph = 108;
       const px = clamp(plot.x - pw / 2, 8, LOGICAL_W - 8 - pw);
       const py = plot.y < 320 ? plot.y + 52 : plot.y - 52 - ph;
       const cardW = Math.floor((pw - 16 - 4 * 8) / 5);
       const cards = TOWER_ORDER.map((type, i) => {
         const c = buildCost(state, type);
-        return {rect: {x: px + 8 + i * (cardW + 8), y: py + 8, w: cardW, h: ph - 16},
+        return {rect: {x: px + 8 + i * (cardW + 8), y: py + 28, w: cardW, h: ph - 36},
                 type, cost: c, afford: state.gold >= c};
       });
       L.buildMenu = {rect: {x: px, y: py, w: pw, h: ph}, cards,
@@ -212,7 +231,10 @@ export function computeLayout(state) {
         maxed: upCost === null,
       };
     } else {
-      const pw = 320, ph = 176;
+      // Panel is 192 tall so the "Next level" line (y+120) clears the
+      // buttons (top edge y+136) — it used to sit at y+120 with buttons
+      // starting at y+120 and was half-covered by the UPGRADE button.
+      const pw = 320, ph = 192;
       const px = clamp(tower.x - pw / 2, 8, LOGICAL_W - 8 - pw);
       const py = clamp(tower.y < 320 ? tower.y + 52 : tower.y - 52 - ph, TOP_H + 8, LOGICAL_H - 8 - ph);
       L.towerPanel = {
@@ -259,10 +281,17 @@ export function computeLayout(state) {
   }
 
   // ---- tutorial hint bar (wave 1) ----
+  // Docked to the right of the hero panel so it never covers the hero
+  // skill button (the old centered bar overlapped its right edge).
+  // Width 560 keeps it clear of the right-aligned decree chips: the
+  // widest chip ("HERO CD -20%", 109px) starts at x=907, the bar ends
+  // at x=824. Only one decree can exist while the tutorial shows.
   if (state.tutorial && (state.phase === 'build' || state.phase === 'wave') && state.wave <= 1) {
     const menuOpen = !!(L.buildMenu || L.towerPanel);
     const y = menuOpen && narrow ? LOGICAL_H - 108 - 8 - 34 : LOGICAL_H - 8 - 34;
-    L.tutorial = {rect: {x: (LOGICAL_W - 620) / 2, y, w: 620, h: 32}};
+    const hx = L.heroPanel ? L.heroPanel.rect.x + L.heroPanel.rect.w + 8 : (LOGICAL_W - 620) / 2;
+    const hw = L.heroPanel ? 560 : 620;
+    L.tutorial = {rect: {x: hx, y, w: hw, h: 32}};
   }
 
   // ---- full screens ----
@@ -353,12 +382,34 @@ function drawTopBar(ctx, state, L) {
        'bold 16px sans-serif', '#f3e9d2');
 
   // center: next-wave preview (build) or enemies left (wave)
-  if (state.phase === 'build') {
-    text(ctx, wavePreview(state.wave + 1), 560, TOP_H / 2 + 1,
-         '14px sans-serif', '#c9b98a', 'center');
-  } else if (state.phase === 'wave') {
-    text(ctx, 'Foes left: ' + enemiesLeft(state), 560, TOP_H / 2 + 1,
-         'bold 15px sans-serif', '#ff9d7a', 'center');
+  // Centered in the measured free gap between the SCORE cluster and the
+  // START/WAVE button — the old code centered at x=560 and long preview
+  // lines ran underneath the button. Shrink 14/15px -> 12px if needed,
+  // then fall back to the ultra-short form; the text can never reach
+  // the button now.
+  if (state.phase === 'build' || state.phase === 'wave') {
+    ctx.font = 'bold 18px sans-serif';
+    const scoreW = ctx.measureText('SCORE ' + state.score).width;
+    const gapStart = 318 + scoreW + 14;
+    const gapEnd = L.top.start.x - 10;
+    const gapW = Math.max(60, gapEnd - gapStart);
+    const cx = (gapStart + gapEnd) / 2;
+    let label = state.phase === 'build'
+      ? wavePreview(state.wave + 1)
+      : 'Foes left: ' + enemiesLeft(state);
+    const color = state.phase === 'build' ? '#c9b98a' : '#ff9d7a';
+    const weight = state.phase === 'build' ? '' : 'bold ';
+    let px = state.phase === 'build' ? 14 : 15;
+    ctx.font = weight + px + 'px sans-serif';
+    if (ctx.measureText(label).width > gapW && px > 12) {
+      px = 12;
+      ctx.font = weight + px + 'px sans-serif';
+    }
+    if (ctx.measureText(label).width > gapW && state.phase === 'build') {
+      label = wavePreviewShort(state.wave + 1);
+      ctx.font = weight + px + 'px sans-serif';
+    }
+    text(ctx, label, cx, TOP_H / 2 + 1, weight + px + 'px sans-serif', color, 'center');
   }
 
   // buttons
@@ -572,7 +623,7 @@ function drawTutorial(ctx, L) {
   ctx.fillStyle = 'rgba(18,14,10,0.88)'; ctx.fill();
   ctx.lineWidth = 1.5; ctx.strokeStyle = '#8a6d2f'; ctx.stroke();
   text(ctx, 'Tap a glowing plot to build  •  SPACE starts the wave  •  1–5 quick-build  •  H = hero skill',
-       LOGICAL_W / 2, t.rect.y + 17, '13px sans-serif', '#ffe9a8', 'center');
+       t.rect.x + t.rect.w / 2, t.rect.y + 17, '13px sans-serif', '#ffe9a8', 'center');
   ctx.restore();
 }
 

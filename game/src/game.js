@@ -335,8 +335,17 @@ export function useHeroSkill(state) {
   const h = state.hero;
   if (!h || h.retreating || h.skillCd > 0) return false;
   const alive = state.enemies.filter((e) => !e.dead);
-  if (alive.length === 0) return false; // nothing to hit: don't burn the cooldown
   const cfg = HEROES[h.id];
+  // Skill range: Aldric's Whirlwind radius, Lyra's attack range. If no
+  // living enemy is in range, don't fire and don't burn the cooldown —
+  // just warn the player. (Previously the skill fired and started its
+  // 15s cooldown even when it could hit nothing.)
+  const range = h.id === 'aldric' ? cfg.skill.aoeR : cfg.range;
+  const inRange = alive.filter((e) => Math.hypot(e.x - h.x, e.y - h.y) <= range + e.r);
+  if (inRange.length === 0) {
+    state.alert = { text: 'NO TARGET IN RANGE', level: 'warn', t: 0 };
+    return false;
+  }
   const cdMul = state.decrees.includes('heroCd20') ? 0.8 : 1;
   h.skillCd = cfg.skill.cd * cdMul;
   const dmgMul = 1 + 0.15 * (h.level - 1);
@@ -352,12 +361,12 @@ export function useHeroSkill(state) {
       if (Math.hypot(e.x - h.x, e.y - h.y) <= r + e.r) damageEnemy(state, e, dmg, true);
     }
   } else {
-    // Lyra — Arrow Volley: 8 arrows onto the densest cluster.
+    // Lyra — Arrow Volley: 8 arrows onto the densest cluster in range.
     let center = null;
     let bestCount = -1;
-    for (const e of alive) {
+    for (const e of inRange) {
       let c = 0;
-      for (const o of alive) {
+      for (const o of inRange) {
         if (Math.hypot(o.x - e.x, o.y - e.y) <= 70) c++;
       }
       if (c > bestCount) {
@@ -365,7 +374,7 @@ export function useHeroSkill(state) {
         center = e;
       }
     }
-    const inCluster = alive
+    const inCluster = inRange
       .filter((e) => Math.hypot(e.x - center.x, e.y - center.y) <= 70)
       .sort((a, b) => Math.hypot(a.x - center.x, a.y - center.y) - Math.hypot(b.x - center.x, b.y - center.y))
       .slice(0, cfg.skill.arrows);
